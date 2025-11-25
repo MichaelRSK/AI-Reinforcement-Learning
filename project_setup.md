@@ -63,6 +63,7 @@ This will install:
 - `torch` - PyTorch for neural networks
 - `numpy` - Numerical computing
 - `matplotlib` - Plotting and visualization
+- `opencv-python` - Image processing for preprocessing pipeline
 
 **Note:** The `ale-py` package is crucial for Atari environments. If you encounter "Namespace ALE not found" errors, make sure `ale-py` is installed.
 
@@ -113,11 +114,17 @@ After setup, your project should have:
 ```
 AI-Reinforcement-Learning/
 ├── venv/                    # Virtual environment (don't commit this)
-├── requirements.txt         # Python dependencies
-├── project_setup.md         # This file
-├── todo.md                  # Project TODO list
-├── test_gymnasium.py        # Test script to verify setup
-└── README.md                # Project README
+├── .gitignore              # Git ignore file
+├── requirements.txt        # Python dependencies
+├── preprocessing.py        # Preprocessing functions
+├── project_setup.md        # This file
+├── todo.md                 # Project TODO list
+├── README.md               # Project README
+├── test_gymnasium.py       # Test script to verify setup
+├── understand_gymnasium.py # Learn Gymnasium basics
+├── test_preprocessing.py   # Test preprocessing pipeline
+├── render_environment.py   # Render environment visually
+└── visualize_preprocessing.py # Visualize preprocessing
 ```
 
 ## Next Steps

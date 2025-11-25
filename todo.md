@@ -10,18 +10,18 @@ Refer to `project_setup.md` for detailed setup instructions.
 ---
 
 ## 🏟️ 2. Understand Gymnasium
-- [ ] Read: how Gymnasium environments work (reset, step, observation_space, action_space)
-- [ ] Run a simple script to interact with the Pong environment using random actions
-- [ ] Understand the five outputs from `env.step()`
+- [x] Read: how Gymnasium environments work (reset, step, observation_space, action_space)
+- [x] Run a simple script to interact with the Pong environment using random actions
+- [x] Understand the five outputs from `env.step()`
 
 ---
 
 ## 🔧 3. Environment & Preprocessing
-- [ ] Convert 210×160×3 RGB frames to grayscale
-- [ ] Downsample frames to smaller dimensions (e.g., 80×80)
-- [ ] Implement frame differencing (current frame − previous frame) to capture motion
-- [ ] Normalize pixel data
-- [ ] Store preprocessing pipeline as a separate function
+- [x] Convert 210×160×3 RGB frames to grayscale
+- [x] Downsample frames to smaller dimensions (e.g., 80×80)
+- [x] Implement frame differencing (current frame − previous frame) to capture motion
+- [x] Normalize pixel data
+- [x] Store preprocessing pipeline as a separate function
 
 ---
 
@@ -79,10 +79,11 @@ Refer to `project_setup.md` for detailed setup instructions.
 ---
 
 ## 📁 9. Final Project Packaging
-- [ ] Clean up code into modules
-- [ ] Create a `requirements.txt`
-- [ ] Add README with instructions to run the project
-- [ ] Attach TODO.md in your repo root
+- [x] Clean up code into modules
+- [x] Create a `requirements.txt`
+- [x] Add README with instructions to run the project
+- [x] Attach TODO.md in your repo root
+- [x] Create `.gitignore` file
 - [ ] Submit project to your class
 
 ---

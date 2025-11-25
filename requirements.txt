@@ -13,3 +13,6 @@ numpy
 # Plotting and Visualization
 matplotlib
 
+# Image Processing
+opencv-python
+
