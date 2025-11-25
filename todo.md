@@ -5,16 +5,7 @@ This document outlines all major steps required to complete your Reinforcement L
 ---
 
 ## 🎮 1. Project Setup
-- [ ] Install Python 3.10+
-- [ ] Create virtual environment
-- [ ] Install required libraries:
-  - [ ] `gymnasium`
-  - [ ] `gymnasium[atari]`
-  - [ ] `gymnasium[accept-rom-license]`
-  - [ ] `numpy`
-  - [ ] `torch` (PyTorch)
-  - [ ] `matplotlib` (for plots)
-- [ ] Verify Pong environment loads correctly
+Refer to `project_setup.md` for detailed setup instructions.
 
 ---
 

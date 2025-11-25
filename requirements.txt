@@ -1,0 +1,15 @@
+# Reinforcement Learning Pong Project Dependencies
+
+# Gymnasium and Atari environments
+gymnasium[atari,accept-rom-license]
+ale-py
+
+# Deep Learning Framework
+torch
+
+# Numerical Computing
+numpy
+
+# Plotting and Visualization
+matplotlib
+
