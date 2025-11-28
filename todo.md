@@ -26,13 +26,13 @@ Refer to `project_setup.md` for detailed setup instructions.
 ---
 
 ## 🧠 4. Build the Policy Network
-- [ ] Create a PyTorch neural network following a simple CNN structure:
-  - [ ] Conv2D → ReLU
-  - [ ] Conv2D → ReLU
-  - [ ] Flatten layer
-  - [ ] Fully Connected → output probabilities for actions
-- [ ] Verify forward pass works on dummy input
-- [ ] Add softmax for action probabilities
+- [x] Create a PyTorch neural network following a simple CNN structure:
+  - [x] Conv2D → ReLU
+  - [x] Conv2D → ReLU
+  - [x] Flatten layer
+  - [x] Fully Connected → output probabilities for actions
+- [x] Verify forward pass works on dummy input
+- [x] Add softmax for action probabilities
 
 ---
 
