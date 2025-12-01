@@ -37,17 +37,17 @@ Refer to `project_setup.md` for detailed setup instructions.
 ---
 
 ## 🔁 5. RL Training Loop (Policy Gradient / REINFORCE)
-- [ ] On each step:
-  - [ ] Preprocess observation
-  - [ ] Forward pass → action probabilities
-  - [ ] Sample an action
-  - [ ] Feed action into environment
-  - [ ] Store: state, action, reward
-- [ ] Detect end of episode → compute discounted rewards
-- [ ] Normalize rewards
-- [ ] Compute policy gradient loss
-- [ ] Update network parameters
-- [ ] Save model checkpoints
+- [x] On each step:
+  - [x] Preprocess observation
+  - [x] Forward pass → action probabilities
+  - [x] Sample an action
+  - [x] Feed action into environment
+  - [x] Store: state, action, reward
+- [x] Detect end of episode → compute discounted rewards
+- [x] Normalize rewards
+- [x] Compute policy gradient loss
+- [x] Update network parameters
+- [x] Save model checkpoints
 
 ---
 
