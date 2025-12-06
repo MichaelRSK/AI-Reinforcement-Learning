@@ -91,6 +91,7 @@ class REINFORCETrainer:
         # Training statistics
         self.episode_rewards = []
         self.episode_lengths = []
+        self.reward_stats_history = []  # Track detailed reward statistics
         self.training_stats = {
             "episode": [],
             "reward": [],
@@ -122,9 +123,62 @@ class REINFORCETrainer:
         self.previous_frame = observation.copy()
         return processed
     
+    def compute_shaped_reward(self, observation, previous_observation, env_reward, action):
+        """
+        Compute shaped reward based on game state.
+        
+        This adds intermediate rewards to help with sparse reward problem:
+        - Small reward when ball is on agent's side
+        - Bonus for potential ball hits
+        - Tiny reward for paddle movement
+        
+        Args:
+            observation: Current raw RGB frame (210, 160, 3)
+            previous_observation: Previous raw RGB frame (None if first frame)
+            env_reward: Original environment reward (-1, 0, or +1)
+            action: Action taken (0-5)
+            
+        Returns:
+            shaped_reward: Modified reward with shaping bonuses
+        """
+        shaped_reward = float(env_reward)  # Start with original reward
+        
+        # If we have a previous frame, analyze changes
+        if previous_observation is not None:
+            # Convert to grayscale for analysis
+            current_gray = np.dot(observation[..., :3], [0.299, 0.587, 0.114])
+            prev_gray = np.dot(previous_observation[..., :3], [0.299, 0.587, 0.114])
+            
+            # In Pong, the agent's paddle is on the right side (columns ~120-160)
+            # Extract right side of screen (agent's side)
+            agent_side_current = current_gray[:, 120:160]
+            agent_side_prev = prev_gray[:, 120:160]
+            
+            # Detect ball presence on agent's side (bright white pixels)
+            ball_threshold = 200  # Ball is bright white (255)
+            ball_pixels_current = np.sum(agent_side_current > ball_threshold)
+            ball_pixels_prev = np.sum(agent_side_prev > ball_threshold)
+            
+            # Reward if ball is present on agent's side (ball is coming toward agent)
+            if ball_pixels_current > 10:  # Ball detected on agent's side
+                shaped_reward += 0.04  # Increased reward for ball being near (was 0.01)
+            
+            # Detect if ball was hit (sudden change in ball position/direction)
+            # Heuristic: if ball pixels change significantly, might be a hit
+            ball_change = abs(ball_pixels_current - ball_pixels_prev)
+            if ball_change > 20 and env_reward == 0:  # Big change, no score yet
+                shaped_reward += 0.15  # Increased bonus for potential hit (was 0.05)
+            
+            # Reward paddle movement (actions 2=UP, 3=RIGHT are movements)
+            # Action space: 0=NOOP, 1=FIRE, 2=UP, 3=RIGHT, 4=LEFT, 5=DOWN
+            if action in [2, 3]:  # Moving actions
+                shaped_reward += 0.002  # Tiny reward for trying to move (unchanged)
+        
+        return shaped_reward
+    
     def collect_episode(self, max_steps=10000):
         """
-        Collect one episode of experience.
+        Collect one episode of experience with reward shaping.
         
         Args:
             max_steps: Maximum steps per episode (safety limit)
@@ -132,12 +186,14 @@ class REINFORCETrainer:
         Returns:
             states: List of preprocessed states
             actions: List of actions taken
-            rewards: List of rewards received
+            rewards: List of rewards received (with shaping)
             log_probs: List of log probabilities of actions
+            env_rewards: List of original environment rewards (for statistics)
         """
         # Reset environment
         observation, info = self.env.reset()
         self.previous_frame = None  # Reset frame differencing
+        previous_raw_observation = None  # Track raw frames for reward shaping
         
         # Preprocess initial observation
         state = self.preprocess_observation(observation)
@@ -147,6 +203,7 @@ class REINFORCETrainer:
         actions = []
         rewards = []
         log_probs = []
+        env_rewards = []  # Track original environment rewards separately
         
         # Run episode
         step_count = 0
@@ -157,22 +214,33 @@ class REINFORCETrainer:
             action, log_prob = self.policy_net.get_action(state, deterministic=False)
             
             # Take step in environment
-            next_observation, reward, terminated, truncated, info = self.env.step(action)
+            next_observation, env_reward, terminated, truncated, info = self.env.step(action)
             done = terminated or truncated
+            
+            # Apply reward shaping
+            shaped_reward = self.compute_shaped_reward(
+                next_observation, 
+                previous_raw_observation, 
+                env_reward, 
+                action
+            )
             
             # Store experience
             states.append(state)
             actions.append(action)
-            rewards.append(reward)
+            rewards.append(shaped_reward)  # Use shaped reward instead of env_reward
+            env_rewards.append(env_reward)  # Track original env reward for statistics
             log_probs.append(log_prob)
             
             # Update state
             if not done:
                 state = self.preprocess_observation(next_observation)
+                previous_raw_observation = observation.copy()  # Save for next reward shaping
             
+            observation = next_observation  # Update for next iteration
             step_count += 1
         
-        return states, actions, rewards, log_probs
+        return states, actions, rewards, log_probs, env_rewards
     
     def compute_discounted_returns(self, rewards):
         """
@@ -194,7 +262,7 @@ class REINFORCETrainer:
         
         return returns
     
-    def normalize_returns(self, returns):
+    def _normalize_returns_array(self, returns):
         """
         Normalize returns by subtracting mean and dividing by std.
         This reduces variance in policy gradient updates.
@@ -263,25 +331,39 @@ class REINFORCETrainer:
             episode_reward: Total reward for the episode
             episode_length: Length of the episode
             loss: Policy gradient loss
+            reward_stats: Dictionary with detailed reward statistics
         """
         # Collect episode
-        states, actions, rewards, log_probs = self.collect_episode()
+        states, actions, rewards, log_probs, env_rewards = self.collect_episode()
         
         # Compute statistics
         episode_reward = sum(rewards)
         episode_length = len(rewards)
+        
+        # Analyze reward statistics
+        env_rewards_array = np.array(env_rewards)
+        points_scored = np.sum(env_rewards_array == 1)  # Agent scored
+        points_lost = np.sum(env_rewards_array == -1)  # Opponent scored
+        shaped_bonus = episode_reward - sum(env_rewards)  # Total shaping bonus
+        
+        reward_stats = {
+            "points_scored": points_scored,
+            "points_lost": points_lost,
+            "shaped_bonus": shaped_bonus,
+            "env_reward_total": sum(env_rewards)
+        }
         
         # Compute discounted returns
         returns = self.compute_discounted_returns(rewards)
         
         # Normalize returns (optional, but recommended)
         if self.normalize_returns:
-            returns = self.normalize_returns(returns)
+            returns = self._normalize_returns_array(returns)
         
         # Update policy
         loss = self.update_policy(states, actions, returns)
         
-        return episode_reward, episode_length, loss
+        return episode_reward, episode_length, loss, reward_stats
     
     def save_checkpoint(self, episode, filename=None):
         """
@@ -352,11 +434,12 @@ class REINFORCETrainer:
         # Training loop
         for episode in range(1, num_episodes + 1):
             # Train on one episode
-            episode_reward, episode_length, loss = self.train_episode()
+            episode_reward, episode_length, loss, reward_stats = self.train_episode()
             
             # Store statistics
             self.episode_rewards.append(episode_reward)
             self.episode_lengths.append(episode_length)
+            self.reward_stats_history.append(reward_stats)
             
             # Update training stats
             self.training_stats["episode"].append(episode)
@@ -376,11 +459,13 @@ class REINFORCETrainer:
             
             # Print statistics
             if episode % print_frequency == 0:
+                # Final score: Agent points - Opponent points
+                agent_score = reward_stats['points_scored']
+                opponent_score = reward_stats['points_lost']
+                
                 print(f"Episode {episode:4d} | "
-                      f"Reward: {episode_reward:7.2f} | "
-                      f"Length: {episode_length:4d} | "
-                      f"Avg Reward (10): {avg_reward:7.2f} | "
-                      f"Loss: {loss:.6f}")
+                      f"Score: {agent_score}-{opponent_score} | "
+                      f"Reward: {episode_reward:+.2f}")
             
             # Save checkpoint
             if episode % save_frequency == 0:
