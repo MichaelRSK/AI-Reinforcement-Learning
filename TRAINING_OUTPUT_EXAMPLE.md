@@ -189,3 +189,4 @@ Episode 100/1000 (10.0% complete)
 1. Reduce shaped bonus amounts
 2. Make sure environment rewards dominate
 3. Check points scored vs shaped bonus ratio
+

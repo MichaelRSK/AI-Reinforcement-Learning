@@ -241,3 +241,4 @@ After adding shaping back:
 3. **Validate detection**: Print what you're detecting, make sure it's correct
 4. **A/B test**: Always compare with/without shaping
 5. **Can't hurt baseline**: Shaping should speed up learning, not change final policy
+

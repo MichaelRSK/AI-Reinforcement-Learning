@@ -3,11 +3,17 @@ Test and Evaluate Trained Agent
 
 This script loads a trained policy network checkpoint and evaluates
 its performance by running it in the Pong environment.
+Supports both REINFORCE and PPO checkpoints.
 
 Usage:
-    python test_agent.py --checkpoint checkpoints/final_checkpoint.pt
+    # REINFORCE agent
     python test_agent.py --checkpoint checkpoints/final_checkpoint.pt --render
-    python test_agent.py --checkpoint checkpoints/final_checkpoint.pt --episodes 10 --render
+    
+    # PPO agent
+    python test_agent.py --checkpoint checkpoints_ppo/ppo_final_checkpoint.pt --render
+    
+    # Multiple episodes
+    python test_agent.py --checkpoint checkpoints_ppo/ppo_final_checkpoint.pt --episodes 10 --render
 """
 
 import argparse
@@ -19,7 +25,37 @@ import os
 import sys
 
 from train import REINFORCETrainer
+from train_ppo import PPOTrainer
 from preprocessing import preprocess_frame
+
+
+def detect_checkpoint_type(checkpoint_path):
+    """
+    Detect whether checkpoint is REINFORCE or PPO based on path and contents.
+    
+    Returns:
+        'reinforce' or 'ppo'
+    """
+    # Check path for hints
+    if 'ppo' in checkpoint_path.lower() or 'checkpoints_ppo' in checkpoint_path:
+        return 'ppo'
+    
+    # Try to load and check structure
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        # PPO checkpoints have 'policy_net' key, REINFORCE has 'policy_net' too
+        # But PPO might have different structure - check for 'optimizer' vs 'policy_optimizer'
+        if 'policy_optimizer' in checkpoint or 'value_optimizer' in checkpoint:
+            return 'ppo'
+        # Check if it's a PPO trainer checkpoint
+        if 'policy_net' in checkpoint and 'value_net' not in checkpoint:
+            # Could be either, but if it's in ppo directory, assume PPO
+            if 'ppo' in os.path.dirname(checkpoint_path).lower():
+                return 'ppo'
+        return 'reinforce'
+    except:
+        # Default to REINFORCE if can't determine
+        return 'reinforce'
 
 
 def test_agent(
@@ -27,7 +63,8 @@ def test_agent(
     num_episodes=5,
     render=False,
     save_video=None,
-    max_steps_per_episode=10000
+    max_steps_per_episode=10000,
+    agent_type=None
 ):
     """
     Test a trained agent by running it in the environment.
@@ -38,6 +75,7 @@ def test_agent(
         render: Whether to render the environment visually
         save_video: Optional path to save video (e.g., "output.mp4")
         max_steps_per_episode: Maximum steps per episode (safety limit)
+        agent_type: 'reinforce' or 'ppo' (auto-detected if None)
     
     Returns:
         Dictionary with test statistics
@@ -46,8 +84,17 @@ def test_agent(
     print("TESTING TRAINED AGENT")
     print("=" * 70)
     
-    # Create trainer
-    trainer = REINFORCETrainer()
+    # Detect agent type if not specified
+    if agent_type is None:
+        agent_type = detect_checkpoint_type(checkpoint_path)
+    
+    print(f"Detected agent type: {agent_type.upper()}")
+    
+    # Create appropriate trainer
+    if agent_type == 'ppo':
+        trainer = PPOTrainer()
+    else:
+        trainer = REINFORCETrainer()
     
     # Load checkpoint
     if not os.path.exists(checkpoint_path):
@@ -66,13 +113,17 @@ def test_agent(
         print(f"Resuming from episode: {episode_num}")
     except Exception as e:
         print(f"ERROR loading checkpoint: {e}")
+        print(f"Trying to load as {agent_type}...")
         sys.exit(1)
     
     print("=" * 70)
     print()
     
     # Set to evaluation mode
-    trainer.policy_net.eval()
+    if agent_type == 'ppo':
+        trainer.policy_net.eval()
+    else:
+        trainer.policy_net.eval()
     
     # Create environment for testing (with rendering if requested)
     if render or save_video:
@@ -113,7 +164,10 @@ def test_agent(
             
             while not done and step_count < max_steps_per_episode:
                 # Get action from policy (deterministic - use best action)
-                action, _ = trainer.policy_net.get_action(state, deterministic=True)
+                if agent_type == 'ppo':
+                    action, _, _ = trainer.policy_net.get_action(state, deterministic=True)
+                else:
+                    action, _ = trainer.policy_net.get_action(state, deterministic=True)
                 
                 # Take step
                 next_observation, reward, terminated, truncated, info = test_env.step(action)
@@ -199,11 +253,13 @@ def compare_checkpoints(checkpoint_paths, num_episodes=5):
     
     for checkpoint_path in checkpoint_paths:
         print(f"Testing: {checkpoint_path}")
-        stats = test_agent(checkpoint_path, num_episodes=num_episodes, render=False)
+        agent_type = detect_checkpoint_type(checkpoint_path)
+        stats = test_agent(checkpoint_path, num_episodes=num_episodes, render=False, agent_type=agent_type)
         results.append({
             "checkpoint": checkpoint_path,
             "avg_reward": stats["avg_reward"],
-            "win_rate": stats["win_rate"]
+            "win_rate": stats["win_rate"],
+            "agent_type": agent_type
         })
         print()
     
@@ -211,11 +267,12 @@ def compare_checkpoints(checkpoint_paths, num_episodes=5):
     print("=" * 70)
     print("COMPARISON SUMMARY")
     print("=" * 70)
-    print(f"{'Checkpoint':<40} {'Avg Reward':<15} {'Win Rate':<10}")
+    print(f"{'Checkpoint':<40} {'Type':<10} {'Avg Reward':<15} {'Win Rate':<10}")
     print("-" * 70)
     for result in results:
         checkpoint_name = os.path.basename(result["checkpoint"])
-        print(f"{checkpoint_name:<40} {result['avg_reward']:>10.2f}     {result['win_rate']:>6.1f}%")
+        agent_type = result.get("agent_type", "unknown").upper()
+        print(f"{checkpoint_name:<40} {agent_type:<10} {result['avg_reward']:>10.2f}     {result['win_rate']:>6.1f}%")
     print("=" * 70)
 
 
@@ -226,14 +283,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic test
+  # REINFORCE agent - basic test
   python test_agent.py --checkpoint checkpoints/final_checkpoint.pt
   
-  # Test with visual rendering
+  # REINFORCE agent - with visual rendering
   python test_agent.py --checkpoint checkpoints/final_checkpoint.pt --render
   
-  # Test for 10 episodes
-  python test_agent.py --checkpoint checkpoints/final_checkpoint.pt --episodes 10
+  # PPO agent - with visual rendering
+  python test_agent.py --checkpoint checkpoints_ppo/ppo_final_checkpoint.pt --render
+  
+  # PPO agent - multiple episodes
+  python test_agent.py --checkpoint checkpoints_ppo/ppo_final_checkpoint.pt --episodes 10 --render
   
   # Compare multiple checkpoints
   python test_agent.py --compare checkpoints/checkpoint_episode_100.pt checkpoints/checkpoint_episode_500.pt checkpoints/final_checkpoint.pt
@@ -273,6 +333,14 @@ Examples:
         help="Compare multiple checkpoints (provide multiple checkpoint paths)"
     )
     
+    parser.add_argument(
+        "--type",
+        type=str,
+        choices=['reinforce', 'ppo'],
+        default=None,
+        help="Force agent type (auto-detected if not specified)"
+    )
+    
     args = parser.parse_args()
     
     # Compare mode
@@ -284,7 +352,8 @@ Examples:
             checkpoint_path=args.checkpoint,
             num_episodes=args.episodes,
             render=args.render,
-            save_video=args.save_video
+            save_video=args.save_video,
+            agent_type=args.type
         )
 
 

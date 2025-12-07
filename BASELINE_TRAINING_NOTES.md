@@ -177,3 +177,4 @@ A: For this small network, CPU is fine. GPU would help if you batch multiple epi
 **Success criteria**: Win rate > 2% by episode 300
 
 Good luck! 🎮
+

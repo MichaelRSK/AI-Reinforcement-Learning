@@ -204,3 +204,4 @@ def compare_algorithms():
 
 if __name__ == "__main__":
     compare_algorithms()
+

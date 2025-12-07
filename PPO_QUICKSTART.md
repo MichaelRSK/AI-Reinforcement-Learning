@@ -354,3 +354,4 @@ A: Edit `train_ppo.py`, lines 43-56 (hyperparameter settings)
 **Good luck with your project! 🎮🚀**
 
 The PPO implementation should give you much better results for your demonstration while still being 100% valid machine learning for your AI class.
+
