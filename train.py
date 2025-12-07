@@ -127,10 +127,17 @@ class REINFORCETrainer:
         """
         Compute shaped reward based on game state.
         
-        This adds intermediate rewards to help with sparse reward problem:
-        - Small reward when ball is on agent's side
-        - Bonus for potential ball hits
-        - Tiny reward for paddle movement
+        CURRENTLY DISABLED: Reward shaping is turned off to establish a clean baseline.
+        The agent will learn purely from environment rewards (±1 for scoring).
+        
+        Previous shaping had detection bugs:
+        - Ball detection was picking up paddles, scores, and center line
+        - "Ball on agent's side" was always true (detected own paddle)
+        - Alignment reward was checking if paddle aligned with itself
+        
+        These bugs caused shaped bonuses of +10-16 per episode, drowning out
+        the true objective. Once baseline learning is confirmed, we can add
+        back PROPER reward shaping with correct ball/paddle isolation.
         
         Args:
             observation: Current raw RGB frame (210, 160, 3)
@@ -139,46 +146,25 @@ class REINFORCETrainer:
             action: Action taken (0-5)
             
         Returns:
-            shaped_reward: Modified reward with shaping bonuses
+            shaped_reward: Environment reward only (no shaping applied)
         """
-        shaped_reward = float(env_reward)  # Start with original reward
+        # Return pure environment reward for now
+        shaped_reward = float(env_reward)
         
-        # If we have a previous frame, analyze changes
-        if previous_observation is not None:
-            # Convert to grayscale for analysis
-            current_gray = np.dot(observation[..., :3], [0.299, 0.587, 0.114])
-            prev_gray = np.dot(previous_observation[..., :3], [0.299, 0.587, 0.114])
-            
-            # In Pong, the agent's paddle is on the right side (columns ~120-160)
-            # Extract right side of screen (agent's side)
-            agent_side_current = current_gray[:, 120:160]
-            agent_side_prev = prev_gray[:, 120:160]
-            
-            # Detect ball presence on agent's side (bright white pixels)
-            ball_threshold = 200  # Ball is bright white (255)
-            ball_pixels_current = np.sum(agent_side_current > ball_threshold)
-            ball_pixels_prev = np.sum(agent_side_prev > ball_threshold)
-            
-            # Reward if ball is present on agent's side (ball is coming toward agent)
-            if ball_pixels_current > 10:  # Ball detected on agent's side
-                shaped_reward += 0.04  # Increased reward for ball being near (was 0.01)
-            
-            # Detect if ball was hit (sudden change in ball position/direction)
-            # Heuristic: if ball pixels change significantly, might be a hit
-            ball_change = abs(ball_pixels_current - ball_pixels_prev)
-            if ball_change > 20 and env_reward == 0:  # Big change, no score yet
-                shaped_reward += 0.15  # Increased bonus for potential hit (was 0.05)
-            
-            # Reward paddle movement (actions 2=UP, 3=RIGHT are movements)
-            # Action space: 0=NOOP, 1=FIRE, 2=UP, 3=RIGHT, 4=LEFT, 5=DOWN
-            if action in [2, 3]:  # Moving actions
-                shaped_reward += 0.002  # Tiny reward for trying to move (unchanged)
+        # TODO: Add back proper reward shaping once baseline is established:
+        # 1. Isolate ball position (small white square, 2-6 pixels, moving)
+        # 2. Track ball proximity only when ball is actually detected
+        # 3. Reward successful hits (ball moving away from agent)
+        # 4. Keep shaping amounts 10-100x smaller than environment rewards
         
         return shaped_reward
     
     def collect_episode(self, max_steps=10000):
         """
         Collect one episode of experience with reward shaping.
+        
+        Reward shaping compares consecutive frames to detect ball position
+        and paddle hits for better learning signal.
         
         Args:
             max_steps: Maximum steps per episode (safety limit)
@@ -193,7 +179,6 @@ class REINFORCETrainer:
         # Reset environment
         observation, info = self.env.reset()
         self.previous_frame = None  # Reset frame differencing
-        previous_raw_observation = None  # Track raw frames for reward shaping
         
         # Preprocess initial observation
         state = self.preprocess_observation(observation)
@@ -220,7 +205,7 @@ class REINFORCETrainer:
             # Apply reward shaping
             shaped_reward = self.compute_shaped_reward(
                 next_observation, 
-                previous_raw_observation, 
+                observation,  # Compare with current frame, not previous
                 env_reward, 
                 action
             )
@@ -235,7 +220,6 @@ class REINFORCETrainer:
             # Update state
             if not done:
                 state = self.preprocess_observation(next_observation)
-                previous_raw_observation = observation.copy()  # Save for next reward shaping
             
             observation = next_observation  # Update for next iteration
             step_count += 1
@@ -418,18 +402,22 @@ class REINFORCETrainer:
             save_frequency: Save checkpoint every N episodes
             print_frequency: Print statistics every N episodes
         """
+        print("\n" + "=" * 70)
+        print("  🎮 STARTING REINFORCE TRAINING FOR PONG")
         print("=" * 70)
-        print("STARTING REINFORCE TRAINING")
+        print(f"  Environment:          {self.env_name}")
+        print(f"  Device:               {self.device}")
+        print(f"  Action Space:         {self.num_actions} actions")
+        print(f"  Learning Rate:        {self.learning_rate}")
+        print(f"  Discount Factor:      {self.gamma}")
+        print(f"  Normalize Returns:    {self.normalize_returns}")
+        print(f"  Total Episodes:       {num_episodes}")
+        print(f"  Save Every:           {save_frequency} episodes")
+        print(f"  Print Every:          {print_frequency} episodes")
         print("=" * 70)
-        print(f"Environment: {self.env_name}")
-        print(f"Number of actions: {self.num_actions}")
-        print(f"Learning rate: {self.learning_rate}")
-        print(f"Discount factor (gamma): {self.gamma}")
-        print(f"Normalize returns: {self.normalize_returns}")
-        print(f"Device: {self.device}")
-        print(f"Number of episodes: {num_episodes}")
-        print("=" * 70)
-        print()
+        print(f"  Reward Shaping:       🚫 DISABLED (Pure Environment Rewards)")
+        print(f"                        Agent learns from ±1 scoring only")
+        print("=" * 70 + "\n")
         
         # Training loop
         for episode in range(1, num_episodes + 1):
@@ -459,36 +447,92 @@ class REINFORCETrainer:
             
             # Print statistics
             if episode % print_frequency == 0:
-                # Final score: Agent points - Opponent points
+                # Get reward statistics
                 agent_score = reward_stats['points_scored']
                 opponent_score = reward_stats['points_lost']
+                env_reward = reward_stats['env_reward_total']
+                shaped_bonus = reward_stats['shaped_bonus']
                 
-                print(f"Episode {episode:4d} | "
-                      f"Score: {agent_score}-{opponent_score} | "
-                      f"Reward: {episode_reward:+.2f}")
+                # Print comprehensive but clean summary
+                print(f"\n{'='*70}")
+                print(f"Episode {episode}/{num_episodes} ({episode/num_episodes*100:.1f}% complete)")
+                print(f"{'='*70}")
+                print(f"  Game Score:        {int(agent_score):2d} - {int(opponent_score):2d}  (Agent - Opponent)")
+                print(f"  Episode Length:    {episode_length:4d} steps")
+                print(f"  Environment Reward: {env_reward:+6.1f}")
+                print(f"  Shaped Bonus:       {shaped_bonus:+6.2f}")
+                print(f"  Total Reward:       {episode_reward:+6.2f}")
+                print(f"  Avg Reward (10):    {avg_reward:+6.2f}")
+                print(f"  Loss:               {loss:8.4f}")
+                
+                # Show trend indicator
+                if len(self.episode_rewards) >= 20:
+                    recent_avg = np.mean(self.episode_rewards[-10:])
+                    prev_avg = np.mean(self.episode_rewards[-20:-10])
+                    if recent_avg > prev_avg + 0.5:
+                        trend = "📈 IMPROVING"
+                    elif recent_avg < prev_avg - 0.5:
+                        trend = "📉 DECLINING"
+                    else:
+                        trend = "➡️  STABLE"
+                    print(f"  Trend:              {trend}")
+                print(f"{'='*70}")
             
-            # Save checkpoint
+            # Save checkpoint and print extended summary
             if episode % save_frequency == 0:
                 self.save_checkpoint(episode)
+                
+                # Print extended summary every save_frequency episodes
+                last_100_rewards = self.episode_rewards[-min(100, len(self.episode_rewards)):]
+                last_100_stats = self.reward_stats_history[-min(100, len(self.reward_stats_history)):]
+                
+                total_points_scored = sum(s['points_scored'] for s in last_100_stats)
+                total_points_lost = sum(s['points_lost'] for s in last_100_stats)
+                avg_100_reward = np.mean(last_100_rewards)
+                best_100_reward = max(last_100_rewards)
+                
+                print(f"\n{'#'*70}")
+                print(f"  CHECKPOINT #{episode//save_frequency} - Episode {episode}")
+                print(f"{'#'*70}")
+                print(f"  Last {len(last_100_rewards)} Episodes Summary:")
+                print(f"    Total Points Scored:  {int(total_points_scored)}")
+                print(f"    Total Points Lost:    {int(total_points_lost)}")
+                print(f"    Win Rate:             {total_points_scored/(total_points_scored + total_points_lost)*100:.1f}%")
+                print(f"    Average Reward:       {avg_100_reward:+.2f}")
+                print(f"    Best Reward:          {best_100_reward:+.2f}")
+                print(f"{'#'*70}\n")
         
         # Save final checkpoint
         self.save_checkpoint(num_episodes, "final_checkpoint.pt")
         
-        print()
+        # Calculate final statistics
+        last_100_stats = self.reward_stats_history[-min(100, len(self.reward_stats_history)):]
+        total_points_scored = sum(s['points_scored'] for s in last_100_stats)
+        total_points_lost = sum(s['points_lost'] for s in last_100_stats)
+        
+        print("\n" + "=" * 70)
+        print("  🎉 TRAINING COMPLETE! 🎉")
         print("=" * 70)
-        print("TRAINING COMPLETE")
-        print("=" * 70)
-        print(f"Total episodes: {num_episodes}")
-        print(f"Average reward (last 100): {np.mean(self.episode_rewards[-100:]):.2f}")
-        print(f"Best episode reward: {max(self.episode_rewards):.2f}")
-        print(f"Checkpoints saved in: {self.checkpoint_dir}")
-        print("=" * 70)
+        print(f"  Total Episodes:           {num_episodes}")
+        print(f"  Total Training Steps:     {sum(self.episode_lengths):,}")
+        print(f"\n  Performance (Last 100 Episodes):")
+        print(f"    Average Reward:         {np.mean(self.episode_rewards[-100:]):+.2f}")
+        print(f"    Best Episode Reward:    {max(self.episode_rewards[-100:]):+.2f}")
+        print(f"    Points Scored:          {int(total_points_scored)}")
+        print(f"    Points Lost:            {int(total_points_lost)}")
+        print(f"    Win Rate:               {total_points_scored/(total_points_scored + total_points_lost)*100:.1f}%")
+        print(f"\n  All-Time Best:")
+        print(f"    Best Episode Reward:    {max(self.episode_rewards):+.2f}")
+        print(f"\n  Files Saved:")
+        print(f"    Checkpoints:            {self.checkpoint_dir}/")
+        print(f"    Final Model:            final_checkpoint.pt")
         
         # Save training statistics to JSON
         stats_file = os.path.join(self.checkpoint_dir, "training_stats.json")
         with open(stats_file, "w") as f:
             json.dump(self.training_stats, f, indent=2)
-        print(f"Training statistics saved to: {stats_file}")
+        print(f"    Training Stats:         training_stats.json")
+        print("=" * 70 + "\n")
     
     def close(self):
         """Close the environment."""
@@ -500,7 +544,7 @@ def main():
     # Create trainer
     trainer = REINFORCETrainer(
         env_name="ALE/Pong-v5",
-        learning_rate=1e-4,
+        learning_rate=3e-4,  # Increased from 1e-4 for faster learning
         gamma=0.99,
         normalize_returns=True,
         checkpoint_dir="checkpoints"
